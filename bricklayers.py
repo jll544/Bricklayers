@@ -46,7 +46,9 @@ def process_gcode(input_file, layer_height, extrusion_multiplier):
         lines = infile.readlines()
 
     # Identify the total number of layers by looking for `G1 Z` commands
-    total_layers = sum(1 for line in lines if line.startswith("G1 Z"))
+##    total_layers = sum(1 for line in lines if line.startswith("G1 Z"))
+    total_layers = sum(1 for line in lines if line.startswith(";LAYER_CHANGE"))
+    logging.info(f"Total layers estimated as {total_layers}")
 
     # Process the G-code
     modified_lines = []
@@ -68,6 +70,8 @@ def process_gcode(input_file, layer_height, extrusion_multiplier):
             perimeter_type = "external"
             inside_perimeter_block = False
             logging.info(f"External perimeter detected at layer {current_layer}")
+            logging.info(f"Inserting G1 Z{current_z:.3f} for non-shifted external perimeter")
+            modified_lines.append(f"G1 Z{current_z:.3f} ; Reset Z for external perimeter\n")
         elif ";TYPE:Perimeter" in line or ";TYPE:Inner wall" in line:
             perimeter_type = "internal"
             inside_perimeter_block = False
@@ -100,7 +104,7 @@ def process_gcode(input_file, layer_height, extrusion_multiplier):
                 e_match = re.search(r'E([-\d.]+)', line)
                 if e_match:
                     e_value = float(e_match.group(1))
-                    if current_layer == 0:  # First layer
+                    if current_layer == 1:  # First layer
                         new_e_value = e_value * 1.5
                         logging.info(f"Multiplying E value by 1.5 on first layer (shifted block): {e_value:.5f} -> {new_e_value:.5f}")
                         line = re.sub(r'E[-\d.]+', f'E{new_e_value:.5f}', line).strip()
@@ -110,7 +114,7 @@ def process_gcode(input_file, layer_height, extrusion_multiplier):
                         logging.info(f"Multiplying E value by 0.5 on last layer (shifted block): {e_value:.5f} -> {new_e_value:.5f}")
                         line = re.sub(r'E[-\d.]+', f'E{new_e_value:.5f}', line).strip()
                         line += f" ; Adjusted E for last layer, block #{perimeter_block_count}\n"
-                    else: 
+                    elif extrusion_multiplier != 1: 
                         new_e_value = e_value * extrusion_multiplier
                         logging.info(f"Multiplying E value by extrusionMultiplier")
                         line = re.sub(r'E[-\d.]+', f'E{new_e_value:.5f}', line).strip()
@@ -133,7 +137,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Post-process G-code for Z-shifting and extrusion adjustments.")
     parser.add_argument("input_file", help="Path to the input G-code file")
     parser.add_argument("-layerHeight", type=float, default=0.2, help="Layer height in mm (default: 0.2mm)")
-    parser.add_argument("-extrusionMultiplier", type=float, default=1, help="Extrusion multiplier for first layer (default: 1.5x)")
+    parser.add_argument("-extrusionMultiplier", type=float, default=1, help="Extrusion multiplier for shifted perimeters")
     args = parser.parse_args()
 
     process_gcode(
